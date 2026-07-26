@@ -1,0 +1,31 @@
+# Web API
+fastapi
+uvicorn
+python-multipart
+pydantic
+
+# Frontend
+streamlit
+requests
+
+# Environment
+python-dotenv
+
+# LangChain and LangGraph
+langchain
+langchain-community
+langchain-openai
+langchain-chroma
+langchain-huggingface
+langchain-text-splitters
+langchain-tavily
+langgraph
+langgraph-checkpoint-sqlite
+
+# RAG and vector database
+chromadb
+sentence-transformers
+pypdf
+
+# Model download
+modelscope
