@@ -225,15 +225,6 @@ omniknow-agent/
 └── README.md
 ```
 
-以下运行数据不会提交到 GitHub：
-
-- 本地模型权重
-- 用户上传的 PDF
-- ChromaDB 向量数据
-- SQLite 会话与记忆数据库
-- API Key 配置
-- 服务运行日志
-
 ## 环境要求
 
 推荐使用以下环境：
@@ -430,30 +421,6 @@ http://localhost:6006/docs
 ```text
 我的研究方向是什么？
 ```
-
-## 数据安全
-
-项目通过 `.gitignore` 排除以下内容：
-
-```text
-.env
-models/
-data/uploads/
-data/chroma/
-data/memory/
-logs/
-*.pdf
-*.db
-*.sqlite
-```
-
-上传代码前仍建议使用以下命令检查待提交文件：
-
-```bash
-git status
-```
-
-如果 API Key 曾经被误上传到 GitHub，仅删除对应文件并不安全，还需要立即废弃原密钥并创建新密钥。
 
 ## 当前限制
 
