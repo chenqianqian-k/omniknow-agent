@@ -87,39 +87,27 @@ Agent 会根据用户问题自主决定是否调用工具以及调用哪一个�
 
 ## 系统架构
 
-```mermaid
-flowchart TD
-    U[用户] --> UI[Streamlit界面]
-    UI --> API[FastAPI服务]
-    API --> AG[LangGraph Agent]
+OmniKnow Agent 采用分层架构，将交互界面、API 服务、Agent 编排、工具调用、知识检索与持久化记忆进行解耦。LangGraph Agent 根据用户意图自主选择知识库检索、联网搜索或长期记忆工具，并由 DeepSeek 完成结果整合与回答生成。
 
-    AG --> KB[知识库工具]
-    AG --> WS[联网搜索工具]
-    AG --> UM[长期记忆工具]
-    AG --> LLM[DeepSeek API]
-
-    KB --> VS[ChromaDB向量召回]
-    VS --> RR[BGE Reranker]
-    RR --> CT[相关证据]
-
-    WS --> TV[Tavily API]
-    UM --> LT[长期记忆数据库]
-
-    AG --> ST[会话状态数据库]
-    CT --> LLM
-    LLM --> API
-```
+<p align="center">
+  <img
+    src="assets/omniknow-architecture.png"
+    alt="OmniKnow Agent System Architecture"
+    width="1000"
+  >
+</p>
 
 ## 知识库问答流程
 
-```mermaid
-flowchart LR
-    Q[用户问题] --> EM[问题向量化]
-    EM --> RC[召回候选文本]
-    RC --> RR[Cross-Encoder重排序]
-    RR --> EV[选择相关证据]
-    EV --> LLM[DeepSeek生成回答]
-```
+项目采用向量召回与 Cross-Encoder 重排序相结合的两阶段检索方案。首先使用 BGE Embedding 对问题进行向量化并从 ChromaDB 召回 Top-10 候选文本块，随后使用 BGE Reranker 重新计算相关性，选择 Top-3 证据交给 DeepSeek 生成回答。
+
+<p align="center">
+  <img
+    src="assets/two-stage-retrieval.png"
+    alt="OmniKnow Agent Two-Stage Knowledge Retrieval Pipeline"
+    width="1000"
+  >
+</p>
 
 完整执行过程如下：
 
