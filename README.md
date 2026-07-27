@@ -96,7 +96,7 @@ LangChain Agent 根据用户意图自主选择知识库检索、联网搜索或�
 
 <p align="center">
   <img
-    src="assets/omniknow-architecture.png"
+    src="assets/3efb6fac-d827-4758-9e4e-b56a92e98d6c.png"
     alt="OmniKnow Agent System Architecture"
     width="1000"
   >
