@@ -29,3 +29,6 @@ pypdf
 
 # Model download
 modelscope
+
+python-docx
+python-pptx
