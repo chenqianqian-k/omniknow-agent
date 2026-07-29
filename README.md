@@ -1,8 +1,8 @@
 # OmniKnow Agent
 
-> 一个具备本地知识检索、工具调用、联网搜索与持久化记忆能力的知识库智能体。
+> 一个具备多格式文档检索、工具调用、联网搜索与持久化记忆能力的知识库智能体。
 
-OmniKnow Agent 是一个面向个人知识管理与文档问答场景构建的 Agent 应用。项目基于 DeepSeek、LangChain、ChromaDB 和 FastAPI，实现了从 PDF 文档入库、两阶段知识检索到答案生成的完整 RAG 流程，并使用 LangGraph Checkpointer 与 SQLite 持久化会话状态。
+OmniKnow Agent 是一个面向个人知识管理与文档问答场景构建的 Agent 应用。项目基于 DeepSeek、LangChain、ChromaDB 和 FastAPI，实现了 PDF、DOCX、PPTX、Markdown、TXT 等常见文档的解析入库、两阶段知识检索与答案生成，并使用 LangGraph Checkpointer 与 SQLite 持久化会话状态。
 
 不同于仅执行一次检索链的普通知识库问答系统，OmniKnow Agent 可以根据用户意图自主选择知识库检索、文档总结、文档列表、联网搜索和长期记忆等工具，同时支持多轮对话、历史会话恢复及跨会话长期记忆。
 
@@ -10,20 +10,24 @@ OmniKnow Agent 是一个面向个人知识管理与文档问答场景构建的 A
 
 ### 文档知识库
 
-- 支持 PDF 文档上传、解析与文本切分
+- 支持 PDF、DOCX、PPTX、Markdown 和 TXT 文档上传
+- 根据文档格式自动选择对应的内容解析方式
+- 支持文档内容切分与元数据保留
 - 使用 BGE Embedding 生成文本向量
 - 使用 ChromaDB 持久化存储文档向量
-- 支持重复文档检测
+- 基于文件 SHA-256 哈希实现重复文档检测
 - 支持已入库文档查询与删除
 - 支持指定文档的整体总结
-- 保留文本块对应的文件名与页码信息
+- PDF 保留文件名与页码，PPTX 保留幻灯片编号
+- DOCX、Markdown 和 TXT 使用文档正文作为来源位置
 
 ### 两阶段检索
 
 - 第一阶段使用向量相似度召回候选文本块
 - 第二阶段使用 Cross-Encoder Reranker 重排序
 - 将高相关性证据交给大语言模型生成回答
-- 回答知识库问题时返回文件名与页码来源
+- 回答知识库问题时返回文件名与对应来源位置
+- PDF 显示页码，PPTX 显示幻灯片编号，其他文本格式显示文档正文
 
 ### Agent工具调用
 
@@ -47,7 +51,8 @@ OmniKnow Agent 是一个面向个人知识管理与文档问答场景构建的 A
 
 - FastAPI 后端接口
 - Streamlit 交互界面
-- PDF 上传与知识库管理
+- 多格式文档上传与知识库管理
+- 支持 PDF、DOCX、PPTX、Markdown 和 TXT 文件
 - 历史会话查询与恢复
 - 长期记忆查询与管理
 - Shell 脚本一键启动前后端服务
@@ -56,9 +61,9 @@ OmniKnow Agent 是一个面向个人知识管理与文档问答场景构建的 A
 
 | 工具名称 | 主要功能 | 典型使用场景 |
 |---|---|---|
-| `knowledge_search` | 检索本地知识库 | 查询文档中的具体事实 |
+| `knowledge_search` | 检索本地知识库 | 查询不同格式文档中的具体事实 |
 | `knowledge_document_list` | 查询已入库文档 | 查看知识库包含哪些文件 |
-| `document_summary` | 读取并总结指定文档 | 总结论文、通知书或报告 |
+| `document_summary` | 读取并总结指定文档 | 总结 PDF、DOCX、PPTX、Markdown 或 TXT 文档 |
 | `web_search` | 搜索实时互联网信息 | 查询新闻、项目和时效性信息 |
 | `save_user_memory` | 保存或更新长期记忆 | 记住用户称呼、研究方向或偏好 |
 | `get_user_memories` | 查询长期记忆 | 跨会话读取已保存的信息 |
@@ -122,9 +127,11 @@ LangChain Agent
 
 ## 知识库问答流程
 
-项目采用向量召回与 Cross-Encoder 重排序相结合的两阶段检索方案。
+项目采用多格式文档解析、向量召回与 Cross-Encoder 重排序相结合的知识库问答流程。
 
-首先使用 BGE Embedding 对用户问题进行向量化，并从 ChromaDB 召回 Top-10 候选文本块；随后使用 BGE Reranker 重新计算问题与候选文本之间的相关性，选择 Top-3 证据交给 DeepSeek 生成回答。
+用户上传文档后，系统首先根据文件扩展名选择对应的解析方式。PDF 按页面解析，PPTX 按幻灯片解析，DOCX 提取段落和表格内容，Markdown 与 TXT 按文本内容读取。解析结果经过统一切分后写入 ChromaDB。
+
+用户提问时，系统使用 BGE Embedding 对问题进行向量化，并从 ChromaDB 召回 Top-10 候选文本块；随后使用 BGE Reranker 重新计算问题与候选文本之间的相关性，选择 Top-3 证据交给 DeepSeek 生成回答。
 
 <p align="center">
   <img
@@ -136,13 +143,23 @@ LangChain Agent
 
 完整执行过程如下：
 
-1. 使用 `bge-small-zh-v1.5` 对用户问题进行向量化。
-2. 从 ChromaDB 中召回向量距离最接近的 Top-10 文本块。
-3. 使用 `bge-reranker-base` 联合编码用户问题与候选文本。
-4. 根据 Reranker 相关性分数重新排列候选文本。
-5. 保留得分最高的 Top-3 证据。
-6. 将证据内容、文件名和页码返回给 Agent。
-7. DeepSeek 根据用户问题与检索证据生成最终回答。
+1. 根据文件格式解析 PDF、DOCX、PPTX、Markdown 或 TXT 文档。
+2. 使用 `RecursiveCharacterTextSplitter` 对文档内容进行文本切分。
+3. 使用 `bge-small-zh-v1.5` 对文本块和用户问题进行向量化。
+4. 从 ChromaDB 中召回向量距离最接近的 Top-10 文本块。
+5. 使用 `bge-reranker-base` 联合编码用户问题与候选文本。
+6. 根据 Reranker 相关性分数重新排列候选文本。
+7. 保留得分最高的 Top-3 证据。
+8. 将证据内容、文件名和来源位置返回给 Agent。
+9. DeepSeek 根据用户问题与检索证据生成最终回答。
+
+不同格式文档使用不同的来源位置表示：
+
+- PDF：显示对应页码
+- PPTX：显示对应幻灯片编号
+- DOCX：显示为文档正文
+- Markdown：显示为文档正文
+- TXT：显示为文档正文
 
 Embedding 模型适合从大量文本块中快速召回候选内容，Reranker 则进一步判断问题与候选文本之间的相关性，从而改善最终证据的排序质量。
 
@@ -230,8 +247,10 @@ default-user
 | 会话持久化 | LangGraph SqliteSaver、SQLite |
 | 长期记忆 | SQLite |
 | PDF解析 | PyPDFLoader |
+| DOCX解析 | python-docx |
+| PPTX解析 | python-pptx |
+| Markdown与TXT解析 | Python文本读取 |
 | 文本切分 | RecursiveCharacterTextSplitter |
-
 ## 项目结构
 
 ```text
@@ -412,7 +431,7 @@ streamlit run frontend.py \
 | `GET` | `/` | 获取服务基本信息 |
 | `GET` | `/health` | 检查后端服务状态 |
 | `POST` | `/chat` | 与Agent进行对话 |
-| `POST` | `/documents/upload` | 上传并写入PDF文档 |
+| `POST` | `/documents/upload` | 上传并写入知识库文档 |
 | `GET` | `/documents` | 查询已入库文档 |
 | `DELETE` | `/documents` | 删除知识库文档 |
 | `GET` | `/sessions` | 查询历史会话 |
@@ -453,6 +472,10 @@ knowledge_document_list
 ```
 
 ### 总结完整文档
+
+支持总结 PDF、DOCX、PPTX、Markdown 和 TXT 文档。
+
+例如：
 
 ```text
 请总结BIBM.pdf的主要内容。
@@ -502,44 +525,23 @@ Agent 将调用：
 get_user_memories
 ```
 
-## 数据安全
-
-以下内容通过 `.gitignore` 排除，不会提交到 GitHub：
-
-```text
-.env
-models/
-data/uploads/
-data/chroma/
-data/memory/
-logs/
-*.pdf
-*.db
-*.sqlite
-```
-
-上传代码前仍建议检查待提交文件：
-
-```bash
-git status
-```
-
-如果 API Key 曾经被误上传到 GitHub，仅删除对应文件并不足以保证安全，还需要立即废弃原密钥并创建新密钥。
-
 ## 当前限制
 
 - 当前主要支持单用户使用
 - 长期记忆使用固定的 `default-user`
-- 当前仅支持 PDF 文档
+- 当前支持 PDF、DOCX、PPTX、Markdown 和 TXT 文档
+- 暂不支持旧版 `.doc` 和 `.ppt` 格式
 - 长文档总结受到最大文本块数量限制
 - DeepSeek 与 Tavily 功能依赖外部 API
 - 本地 Embedding 和 Reranker 模型需要单独下载
 - 当前不包含用户登录、权限认证和访问控制
-- 文档解析暂未针对扫描版 PDF 集成 OCR
+- 文档解析暂未针对扫描版 PDF 和图片内容集成 OCR
+- DOCX 和 PPTX 当前主要提取文本内容，不解析图片中的文字
 
 ## 后续计划
 
-- 支持 Word、Markdown、TXT 等文档格式
+- 支持 Excel、HTML 等更多文档格式
+- 为扫描版 PDF 和文档图片增加 OCR 解析
 - 增加多用户身份认证与数据隔离
 - 支持流式输出 Agent 回答
 - 增加异步文档解析与任务状态查询
