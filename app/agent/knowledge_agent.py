@@ -1,7 +1,10 @@
+from collections.abc import Iterator
+
 from langchain.agents import create_agent
 #from langchain.messages import ToolMessage
 from langchain.messages import (
     AIMessage,
+    AIMessageChunk,
     HumanMessage,
     ToolMessage,
 )
@@ -55,7 +58,8 @@ def knowledge_search(query: str) -> str:
         context_parts.append(
             f"""[重排序结果{result["rank"]}]
 文件：{result["file_name"]}
-页码：{result["page"]}
+文件类型：{result["file_type"]}
+来源位置：{result["location_label"]}
 原向量距离：{result["distance"]}
 重排序分数：{result["rerank_score"]}
 内容：
@@ -101,8 +105,14 @@ def document_summary(file_name: str) -> str:
             "请先调用knowledge_document_list确认完整文件名。"
         )
 
+    file_type = document_chunks[0].get(
+        "file_type",
+        "unknown",
+    )
+
     content_parts = [
         f"文件名：{file_name}",
+        f"文件类型：{file_type}",
         f"读取文本块数量：{len(document_chunks)}",
         "文档内容：",
     ]
@@ -112,7 +122,8 @@ def document_summary(file_name: str) -> str:
         start=1,
     ):
         content_parts.append(
-            f"\n【文本块{index}，第{chunk['page']}页】\n"
+            f"\n【文本块{index}，"
+            f"{chunk['location_label']}】\n"
             f"{chunk['content']}"
         )
 
@@ -251,7 +262,7 @@ SYSTEM_PROMPT = """你是一个具有知识库检索、文档处理、短期会�
 2. 不得凭记忆回答知识库相关问题，也不能使用之前对话中的检索结果代替本轮工具调用。
 3. 只能依据工具本轮返回的资料回答知识库问题。
 4. 如果工具返回的资料无法回答问题，明确说明“根据当前知识库资料，无法回答该问题”。
-5. 使用knowledge_search回答时，需要在答案末尾标明资料的文件名和页码。
+5. 使用knowledge_search回答时，需要在答案末尾标明资料的文件名和来源位置。PDF使用页码，PPTX使用幻灯片编号，DOCX、Markdown和TXT标注为文档正文。
 
 二、文档列表与总结规则
 6. 如果用户询问知识库中有哪些文件、文件名称、文档数量或已经上传了什么资料，必须调用knowledge_document_list。
@@ -392,6 +403,148 @@ def run_agent(
         "answer": final_message.content,
         "tool_called": len(tool_records) > 0,
         "tool_records": tool_records,
+    }
+
+
+def extract_chunk_text(
+    message_chunk: AIMessageChunk,
+) -> str:
+    """从模型流式消息块中提取文本。"""
+    content = message_chunk.content
+
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        text_parts = []
+
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+
+            if block.get("type") in {
+                "text",
+                "text_delta",
+            }:
+                text_parts.append(
+                    block.get("text", "")
+                )
+
+        return "".join(text_parts)
+
+    return ""
+
+
+def stream_agent(
+    query: str,
+    thread_id: str = "default",
+) -> Iterator[dict]:
+    """在指定会话中流式执行Agent。"""
+    clean_query = query.strip()
+    clean_thread_id = thread_id.strip()
+
+    if not clean_query:
+        raise ValueError("用户问题不能为空")
+
+    if not clean_thread_id:
+        raise ValueError("thread_id不能为空")
+
+    agent_input = {
+        "messages": [
+            {
+                "role": "user",
+                "content": clean_query,
+            }
+        ]
+    }
+
+    agent_config = {
+        "configurable": {
+            "thread_id": clean_thread_id,
+        }
+    }
+
+    called_tools = []
+
+    for stream_mode, chunk in AGENT.stream(
+        agent_input,
+        config=agent_config,
+        stream_mode=[
+            "messages",
+            "updates",
+        ],
+    ):
+        if stream_mode == "messages":
+            message_chunk, metadata = chunk
+
+            if not isinstance(
+                message_chunk,
+                AIMessageChunk,
+            ):
+                continue
+
+            text = extract_chunk_text(
+                message_chunk
+            )
+
+            if text:
+                yield {
+                    "type": "token",
+                    "content": text,
+                }
+
+        elif stream_mode == "updates":
+            for node_name, node_update in chunk.items():
+                if not isinstance(
+                    node_update,
+                    dict,
+                ):
+                    continue
+
+                node_messages = node_update.get(
+                    "messages",
+                    [],
+                )
+
+                if not isinstance(
+                    node_messages,
+                    list,
+                ):
+                    node_messages = [
+                        node_messages
+                    ]
+
+                for message in node_messages:
+                    if not isinstance(
+                        message,
+                        ToolMessage,
+                    ):
+                        continue
+
+                    tool_name = (
+                        message.name
+                        or "unknown_tool"
+                    )
+
+                    if tool_name in called_tools:
+                        continue
+
+                    called_tools.append(tool_name)
+
+                    yield {
+                        "type": "tool",
+                        "tool_name": tool_name,
+                    }
+
+    save_session(
+        thread_id=clean_thread_id,
+        first_query=clean_query,
+    )
+
+    yield {
+        "type": "done",
+        "tool_called": len(called_tools) > 0,
+        "tool_names": called_tools,
     }
 
 
